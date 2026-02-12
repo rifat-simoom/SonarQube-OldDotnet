@@ -42,9 +42,23 @@ jobs:
         uses: NuGet/setup-nuget@v1.1.1
 
       - name: Add Sources to NuGet
+        shell: pwsh
         run: |
-          nuget sources add -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -configfile ./nuget.config -name github_pipeline -username ${{ secrets.DSSL_USERNAME }} -password ${{ secrets.DSSL_TOKEN }} -StorePasswordInClearText
-          nuget sources add -source https://api.nuget.org/v3/index.json -configfile ./nuget.config -name nuget_pipeline
+          $configFile = Join-Path $PWD "nuget.config"
+
+          nuget sources remove -name nuget_pipeline -configfile $configFile | Out-Host
+          nuget sources add -source "https://api.nuget.org/v3/index.json" -configfile $configFile -name nuget_pipeline | Out-Host
+
+          $username = "${{ secrets.DSSL_USERNAME }}"
+          $token = "${{ secrets.DSSL_TOKEN }}"
+
+          if ([string]::IsNullOrWhiteSpace($username) -or [string]::IsNullOrWhiteSpace($token)) {
+            Write-Host "Skipping GitHub Packages source (missing secrets DSSL_USERNAME/DSSL_TOKEN)."
+            exit 0
+          }
+
+          nuget sources remove -name github_pipeline -configfile $configFile | Out-Host
+          nuget sources add -source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -configfile $configFile -name github_pipeline -username $username -password $token -StorePasswordInClearText | Out-Host
 
       - name: Install SonarScanner
         run: dotnet tool install --global dotnet-sonarscanner
