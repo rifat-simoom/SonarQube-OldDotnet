@@ -1,0 +1,51 @@
+# SonarQube-OldDotnet
+
+Minimal .NET solution intended to exercise a Windows GitHub Actions Sonar workflow:
+
+- Installs JDK 17 (Temurin) for `dotnet-sonarscanner`
+- Builds with MSBuild
+- Runs tests via `vstest.console.exe` by scanning `bin` for `*.Test(s).dll` (excluding `*CoreTests*`)
+- Produces TRX output for Sonar (`**/TestResults/*.trx`)
+- Contains `Migrations/` and `packages/` folders to validate Sonar exclusions
+
+## Configure GitHub Actions (SonarCloud)
+
+Repository **Secrets**:
+
+- `SONAR_TOKEN` (required)
+- `DSSL_USERNAME` / `DSSL_TOKEN` (required if you want to exercise the GitHub Packages NuGet source step; otherwise you can remove/skip that step)
+
+Repository **Variables**:
+
+- `SONAR_PROJECT_KEY` (required)
+- `SONAR_PROJECT_NAME` (required)
+- `SONAR_ORGANIZATION` (required)
+- `SOLUTION_PATH` (required; e.g. `SonarOldDotnet.sln`)
+- `SONAR_COVERAGE_EXCLUSIONS` (optional)
+- `SONAR_CPD_EXCLUSIONS` (optional)
+
+## Run analysis locally
+
+```powershell
+$env:SONAR_TOKEN="..."
+$env:SONAR_HOST_URL="https://sonarcloud.io"
+$env:SONAR_PROJECT_KEY="..."
+$env:SONAR_PROJECT_NAME="..."
+$env:SONAR_ORGANIZATION="..."
+
+.\Tools\run-sonar-local.ps1
+```
+
+## Publish a NuGet package to GitHub Packages (owner feed)
+
+This repo includes a packable library (`src/LegacyLib`) and a script to publish it to:
+
+`https://nuget.pkg.github.com/<OWNER>/index.json`
+
+Local publish (requires a PAT with `write:packages` on the owner account):
+
+```powershell
+$env:GITHUB_OWNER="rifat-simoom"
+$env:GITHUB_PACKAGES_TOKEN="..."   # PAT with write:packages
+.\Tools\publish-github-packages.ps1
+```

@@ -1,0 +1,43 @@
+name: Publish GitHub Packages (NuGet)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "NuGet package version (optional). If empty, uses run number."
+        required: false
+
+jobs:
+  publish:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@12ea9245d6ecf95443cfc493e9db33558e70ec13 # v2
+
+      - name: Pack
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.version }}"
+          if ($version -eq "") { $version = "0.1.${{ github.run_number }}" }
+          dotnet pack .\src\LegacyLib\LegacyLib.csproj -c Release -p:PackageVersion=$version
+
+      - name: Push to GitHub Packages
+        env:
+          TOKEN: ${{ secrets.DSSL_TOKEN }}
+        shell: pwsh
+        run: |
+          if ("$env:TOKEN" -eq "") { throw "Missing secret DSSL_TOKEN (must have write:packages)." }
+
+          $source = "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+          Get-ChildItem -Recurse -Filter *.nupkg .\src\LegacyLib\bin\Release |
+            Where-Object { $_.Name -notlike "*.symbols.nupkg" } |
+            ForEach-Object {
+              dotnet nuget push $_.FullName --source $source --api-key "$env:TOKEN" --skip-duplicate
+            }

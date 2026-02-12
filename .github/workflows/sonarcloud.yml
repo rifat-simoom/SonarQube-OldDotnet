@@ -1,0 +1,159 @@
+name: Sonarcloud
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+env:
+  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  SOLUTION_PATH: ${{ vars.SOLUTION_PATH }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sonarcloud:
+    name: Run Sonarcloud
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        with:
+          fetch-depth: 0
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@1ff57057b5cfdc39105cd07a01d78e9b0ea0c14c # v1.3.1
+
+      - name: Setup VSTest
+        uses: darenm/Setup-VSTest@62390bcb39c725e3fc892482e5668cf71d6a3577 # v1
+
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@fd9fffd6ca4541cf4152a9565835ca1a88a6eb37 # v1.1.1
+
+      - name: Add Sources to NuGet
+        env:
+          DSSL_USERNAME: ${{ secrets.DSSL_USERNAME }}
+          DSSL_TOKEN: ${{ secrets.DSSL_TOKEN }}
+        shell: pwsh
+        run: |
+          $configFile = Join-Path $PWD "nuget.config"
+
+          $nugetSources = nuget sources list -configfile $configFile
+          if ($nugetSources -match 'nuget_pipeline') {
+            nuget sources remove -name nuget_pipeline -configfile $configFile | Out-Host
+          }
+          nuget sources add -source "https://api.nuget.org/v3/index.json" -configfile $configFile -name nuget_pipeline | Out-Host
+
+          if ([string]::IsNullOrWhiteSpace($env:DSSL_USERNAME) -or [string]::IsNullOrWhiteSpace($env:DSSL_TOKEN)) {
+            throw "Missing secrets DSSL_USERNAME/DSSL_TOKEN (required to add GitHub Packages NuGet source)."
+          }
+
+          $nugetSources = nuget sources list -configfile $configFile
+          if ($nugetSources -match 'github_pipeline') {
+            nuget sources remove -name github_pipeline -configfile $configFile | Out-Host
+          }
+          nuget sources add -source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -configfile $configFile -name github_pipeline -username $env:DSSL_USERNAME -password $env:DSSL_TOKEN -StorePasswordInClearText | Out-Host
+
+      - name: Install SonarScanner
+        shell: pwsh
+        run: |
+          try {
+            dotnet tool update --global dotnet-sonarscanner
+          }
+          catch {
+            dotnet tool install --global dotnet-sonarscanner
+          }
+
+      - name: Add dotnet tools to PATH
+        shell: pwsh
+        run: |
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: SonarCloud Begin
+        id: sonar_begin
+        shell: pwsh
+        run: |
+          $projectKey = "${{ vars.SONAR_PROJECT_KEY }}"
+          $projectName = "${{ vars.SONAR_PROJECT_NAME }}"
+          $organization = "${{ vars.SONAR_ORGANIZATION }}"
+          $token = $env:SONAR_TOKEN
+
+          if ([string]::IsNullOrWhiteSpace($projectKey)) { throw "Missing repo variable SONAR_PROJECT_KEY." }
+          if ([string]::IsNullOrWhiteSpace($projectName)) { throw "Missing repo variable SONAR_PROJECT_NAME." }
+          if ([string]::IsNullOrWhiteSpace($organization)) { throw "Missing repo variable SONAR_ORGANIZATION." }
+          if ([string]::IsNullOrWhiteSpace($token)) { throw "Missing repo secret SONAR_TOKEN." }
+
+          $beginArgs = @(
+            "sonarscanner", "begin",
+            "/k:$projectKey",
+            "/n:$projectName",
+            "/o:$organization",
+            "/d:sonar.token=$token",
+            "/d:sonar.host.url=https://sonarcloud.io",
+            "/d:sonar.cs.vstest.reportsPaths=**/TestResults/*.trx",
+            "/d:sonar.exclusions=**/Migrations/**,**/packages/**"
+          )
+
+          $coverageExclusions = "${{ vars.SONAR_COVERAGE_EXCLUSIONS }}"
+          if (-not [string]::IsNullOrWhiteSpace($coverageExclusions)) {
+            $beginArgs += "/d:sonar.coverage.exclusions=$coverageExclusions"
+          }
+
+          $cpdExclusions = "${{ vars.SONAR_CPD_EXCLUSIONS }}"
+          if (-not [string]::IsNullOrWhiteSpace($cpdExclusions)) {
+            $beginArgs += "/d:sonar.cpd.exclusions=$cpdExclusions"
+          }
+
+          dotnet @beginArgs
+
+      - name: Restore Packages
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SOLUTION_PATH)) { throw "Missing repo variable SOLUTION_PATH." }
+          nuget restore "$env:SOLUTION_PATH"
+
+      - name: Build Solution
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SOLUTION_PATH)) { throw "Missing repo variable SOLUTION_PATH." }
+          msbuild "$env:SOLUTION_PATH" /p:Configuration=Release
+
+      - name: Run All Tests
+        shell: pwsh
+        run: |
+          $tests = Get-ChildItem -Recurse -Filter *.dll |
+                    Where-Object { $_.Name -match '(.Test|.Tests).dll$' -and $_.FullName -match 'bin' -and $_.Name -notmatch 'CoreTests' }
+
+          if ($tests.Count -eq 0) {
+            Write-Host "No test DLLs found."
+            exit 1
+          }
+
+          $testResultsDir = Join-Path $PWD "TestResults"
+          if (-not (Test-Path $testResultsDir)) {
+            New-Item -ItemType Directory -Path $testResultsDir | Out-Null
+          }
+
+          foreach ($dll in $tests) {
+            Write-Host "Running tests in $($dll.FullName)"
+            & "vstest.console.exe" "$($dll.FullName)" /Logger:trx /ResultsDirectory:"$testResultsDir"
+          }
+
+      - name: SonarCloud End
+        if: ${{ always() && steps.sonar_begin.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SONAR_TOKEN)) { throw "Missing repo secret SONAR_TOKEN." }
+          dotnet sonarscanner end "/d:sonar.token=$env:SONAR_TOKEN"
