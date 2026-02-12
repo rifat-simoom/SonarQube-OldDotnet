@@ -34,3 +34,17 @@ $env:SONAR_ORGANIZATION="..."
 
 .\Tools\run-sonar-local.ps1
 ```
+
+## Publish a NuGet package to GitHub Packages (owner feed)
+
+This repo includes a packable library (`src/LegacyLib`) and a script to publish it to:
+
+`https://nuget.pkg.github.com/<OWNER>/index.json`
+
+Local publish (requires a PAT with `write:packages` on the owner account):
+
+```powershell
+$env:GITHUB_OWNER="rifat-simoom"
+$env:GITHUB_PACKAGES_TOKEN="..."   # PAT with write:packages
+.\Tools\publish-github-packages.ps1
+```

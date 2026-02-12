@@ -4,6 +4,13 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <IsPackable>true</IsPackable>
+    <PackageId>SonarQube.OldDotnet.LegacyLib</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>rifat-simoom</Authors>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/rifat-simoom/SonarQube-OldDotnet</RepositoryUrl>
   </PropertyGroup>
 
 </Project>
