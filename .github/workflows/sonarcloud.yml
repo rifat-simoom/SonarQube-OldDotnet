@@ -10,6 +10,7 @@ on:
 env:
   SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  SOLUTION_PATH: ${{ vars.SOLUTION_PATH }}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -53,8 +54,7 @@ jobs:
           $token = "${{ secrets.DSSL_TOKEN }}"
 
           if ([string]::IsNullOrWhiteSpace($username) -or [string]::IsNullOrWhiteSpace($token)) {
-            Write-Host "Skipping GitHub Packages source (missing secrets DSSL_USERNAME/DSSL_TOKEN)."
-            exit 0
+            throw "Missing secrets DSSL_USERNAME/DSSL_TOKEN (required to add GitHub Packages NuGet source)."
           }
 
           nuget sources remove -name github_pipeline -configfile $configFile | Out-Host
@@ -113,10 +113,16 @@ jobs:
           dotnet @beginArgs
 
       - name: Restore Packages
-        run: nuget restore "${{ github.workspace }}\\SonarOldDotnet.sln"
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SOLUTION_PATH)) { throw "Missing repo variable SOLUTION_PATH." }
+          nuget restore "$env:SOLUTION_PATH"
 
       - name: Build Solution
-        run: msbuild "${{ github.workspace }}\\SonarOldDotnet.sln" /p:Configuration=Release
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SOLUTION_PATH)) { throw "Missing repo variable SOLUTION_PATH." }
+          msbuild "$env:SOLUTION_PATH" /p:Configuration=Release
 
       - name: Run All Tests
         shell: pwsh

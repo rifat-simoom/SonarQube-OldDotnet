@@ -20,6 +20,7 @@ Repository **Variables**:
 - `SONAR_PROJECT_KEY` (required)
 - `SONAR_PROJECT_NAME` (required)
 - `SONAR_ORGANIZATION` (required)
+- `SOLUTION_PATH` (required; e.g. `SonarOldDotnet.sln`)
 - `SONAR_COVERAGE_EXCLUSIONS` (optional)
 - `SONAR_CPD_EXCLUSIONS` (optional)
 
