@@ -49,7 +49,13 @@ jobs:
       - name: Install SonarScanner
         run: dotnet tool install --global dotnet-sonarscanner
 
+      - name: Add dotnet tools to PATH
+        shell: pwsh
+        run: |
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: SonarCloud Begin
+        id: sonar_begin
         run: >-
           dotnet sonarscanner begin
           /k:"${{ vars.SONAR_PROJECT_KEY }}"
@@ -85,6 +91,5 @@ jobs:
           }
 
       - name: SonarCloud End
-        if: always()
+        if: ${{ always() && steps.sonar_begin.outcome == 'success' }}
         run: dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
-
