@@ -19,7 +19,7 @@ jobs:
         uses: actions/setup-dotnet@v4
 
       - name: Setup NuGet
-        uses: NuGet/setup-nuget@v2
+        uses: NuGet/setup-nuget@12ea9245d6ecf95443cfc493e9db33558e70ec13 # v2
 
       - name: Pack
         shell: pwsh
@@ -41,4 +41,3 @@ jobs:
             ForEach-Object {
               dotnet nuget push $_.FullName --source $source --api-key "$env:TOKEN" --skip-duplicate
             }
-

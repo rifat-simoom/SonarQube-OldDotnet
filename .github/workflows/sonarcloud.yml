@@ -34,15 +34,18 @@ jobs:
           java-version: "17"
 
       - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v1.3.1
+        uses: microsoft/setup-msbuild@1ff57057b5cfdc39105cd07a01d78e9b0ea0c14c # v1.3.1
 
       - name: Setup VSTest
-        uses: darenm/Setup-VSTest@v1
+        uses: darenm/Setup-VSTest@62390bcb39c725e3fc892482e5668cf71d6a3577 # v1
 
       - name: Setup NuGet
-        uses: NuGet/setup-nuget@v1.1.1
+        uses: NuGet/setup-nuget@fd9fffd6ca4541cf4152a9565835ca1a88a6eb37 # v1.1.1
 
       - name: Add Sources to NuGet
+        env:
+          DSSL_USERNAME: ${{ secrets.DSSL_USERNAME }}
+          DSSL_TOKEN: ${{ secrets.DSSL_TOKEN }}
         shell: pwsh
         run: |
           $configFile = Join-Path $PWD "nuget.config"
@@ -50,15 +53,12 @@ jobs:
           nuget sources remove -name nuget_pipeline -configfile $configFile | Out-Host
           nuget sources add -source "https://api.nuget.org/v3/index.json" -configfile $configFile -name nuget_pipeline | Out-Host
 
-          $username = "${{ secrets.DSSL_USERNAME }}"
-          $token = "${{ secrets.DSSL_TOKEN }}"
-
-          if ([string]::IsNullOrWhiteSpace($username) -or [string]::IsNullOrWhiteSpace($token)) {
+          if ([string]::IsNullOrWhiteSpace($env:DSSL_USERNAME) -or [string]::IsNullOrWhiteSpace($env:DSSL_TOKEN)) {
             throw "Missing secrets DSSL_USERNAME/DSSL_TOKEN (required to add GitHub Packages NuGet source)."
           }
 
           nuget sources remove -name github_pipeline -configfile $configFile | Out-Host
-          nuget sources add -source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -configfile $configFile -name github_pipeline -username $username -password $token -StorePasswordInClearText | Out-Host
+          nuget sources add -source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -configfile $configFile -name github_pipeline -username $env:DSSL_USERNAME -password $env:DSSL_TOKEN -StorePasswordInClearText | Out-Host
 
       - name: Install SonarScanner
         shell: pwsh
@@ -82,7 +82,7 @@ jobs:
           $projectKey = "${{ vars.SONAR_PROJECT_KEY }}"
           $projectName = "${{ vars.SONAR_PROJECT_NAME }}"
           $organization = "${{ vars.SONAR_ORGANIZATION }}"
-          $token = "${{ secrets.SONAR_TOKEN }}"
+          $token = $env:SONAR_TOKEN
 
           if ([string]::IsNullOrWhiteSpace($projectKey)) { throw "Missing repo variable SONAR_PROJECT_KEY." }
           if ([string]::IsNullOrWhiteSpace($projectName)) { throw "Missing repo variable SONAR_PROJECT_NAME." }
@@ -142,4 +142,7 @@ jobs:
 
       - name: SonarCloud End
         if: ${{ always() && steps.sonar_begin.outcome == 'success' }}
-        run: dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SONAR_TOKEN)) { throw "Missing repo secret SONAR_TOKEN." }
+          dotnet sonarscanner end "/d:sonar.token=$env:SONAR_TOKEN"
