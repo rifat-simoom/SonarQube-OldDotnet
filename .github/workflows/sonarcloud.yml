@@ -1,0 +1,90 @@
+name: Sonarcloud
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+env:
+  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sonarcloud:
+    name: Run Sonarcloud
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        with:
+          fetch-depth: 0
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v1.3.1
+
+      - name: Setup VSTest
+        uses: darenm/Setup-VSTest@v1
+
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v1.1.1
+
+      - name: Add Sources to NuGet
+        run: |
+          nuget sources add -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -configfile ./nuget.config -name github_pipeline -username ${{ secrets.DSSL_USERNAME }} -password ${{ secrets.DSSL_TOKEN }} -StorePasswordInClearText
+          nuget sources add -source https://api.nuget.org/v3/index.json -configfile ./nuget.config -name nuget_pipeline
+
+      - name: Install SonarScanner
+        run: dotnet tool install --global dotnet-sonarscanner
+
+      - name: SonarCloud Begin
+        run: >-
+          dotnet sonarscanner begin
+          /k:"${{ vars.SONAR_PROJECT_KEY }}"
+          /n:"${{ vars.SONAR_PROJECT_NAME }}"
+          /o:"${{ vars.SONAR_ORGANIZATION }}"
+          /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+          /d:sonar.host.url="https://sonarcloud.io"
+          /d:sonar.cs.vstest.reportsPaths="**/TestResults/*.trx"
+          /d:sonar.coverage.exclusions="${{ vars.SONAR_COVERAGE_EXCLUSIONS }}"
+          /d:sonar.cpd.exclusions="${{ vars.SONAR_CPD_EXCLUSIONS }}"
+          /d:sonar.exclusions="**/Migrations/**,**/packages/**"
+
+      - name: Restore Packages
+        run: nuget restore "${{ github.workspace }}\\SonarOldDotnet.sln"
+
+      - name: Build Solution
+        run: msbuild "${{ github.workspace }}\\SonarOldDotnet.sln" /p:Configuration=Release
+
+      - name: Run All Tests
+        shell: pwsh
+        run: |
+          $tests = Get-ChildItem -Recurse -Filter *.dll |
+                    Where-Object { $_.Name -match '(.Test|.Tests).dll$' -and $_.FullName -match 'bin' -and $_.Name -notmatch 'CoreTests' }
+
+          if ($tests.Count -eq 0) {
+            Write-Host "No test DLLs found."
+            exit 1
+          }
+
+          foreach ($dll in $tests) {
+            Write-Host "Running tests in $($dll.FullName)"
+            & "vstest.console.exe" "$($dll.FullName)" /Logger:trx
+          }
+
+      - name: SonarCloud End
+        if: always()
+        run: dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+
