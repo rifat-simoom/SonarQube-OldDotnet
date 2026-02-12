@@ -19,7 +19,7 @@ concurrency:
 jobs:
   sonarcloud:
     name: Run Sonarcloud
-    runs-on: windows-2022
+    runs-on: windows-latest
 
     steps:
       - name: Checkout code
