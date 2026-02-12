@@ -50,14 +50,20 @@ jobs:
         run: |
           $configFile = Join-Path $PWD "nuget.config"
 
-          nuget sources remove -name nuget_pipeline -configfile $configFile | Out-Host
+          $nugetSources = nuget sources list -configfile $configFile
+          if ($nugetSources -match 'nuget_pipeline') {
+            nuget sources remove -name nuget_pipeline -configfile $configFile | Out-Host
+          }
           nuget sources add -source "https://api.nuget.org/v3/index.json" -configfile $configFile -name nuget_pipeline | Out-Host
 
           if ([string]::IsNullOrWhiteSpace($env:DSSL_USERNAME) -or [string]::IsNullOrWhiteSpace($env:DSSL_TOKEN)) {
             throw "Missing secrets DSSL_USERNAME/DSSL_TOKEN (required to add GitHub Packages NuGet source)."
           }
 
-          nuget sources remove -name github_pipeline -configfile $configFile | Out-Host
+          $nugetSources = nuget sources list -configfile $configFile
+          if ($nugetSources -match 'github_pipeline') {
+            nuget sources remove -name github_pipeline -configfile $configFile | Out-Host
+          }
           nuget sources add -source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -configfile $configFile -name github_pipeline -username $env:DSSL_USERNAME -password $env:DSSL_TOKEN -StorePasswordInClearText | Out-Host
 
       - name: Install SonarScanner
@@ -135,9 +141,14 @@ jobs:
             exit 1
           }
 
+          $testResultsDir = Join-Path $PWD "TestResults"
+          if (-not (Test-Path $testResultsDir)) {
+            New-Item -ItemType Directory -Path $testResultsDir | Out-Null
+          }
+
           foreach ($dll in $tests) {
             Write-Host "Running tests in $($dll.FullName)"
-            & "vstest.console.exe" "$($dll.FullName)" /Logger:trx
+            & "vstest.console.exe" "$($dll.FullName)" /Logger:trx /ResultsDirectory:"$testResultsDir"
           }
 
       - name: SonarCloud End
